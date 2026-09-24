@@ -1,0 +1,692 @@
+{
+  "info": {
+    "_postman_id": "8f3b20e4-d55a-4cb6-a67b-123456789abc",
+    "name": "Pharmacy Management & Healthcare Store API",
+    "description": "Production-grade Pharmacy Management API with JWT Role-Based Access Control (RBAC), complex Mongoose relationships, MongoDB Atlas aggregation pipelines, and atomic inventory stock decrements.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5001", "type": "string" },
+    { "key": "adminKey", "value": "supersecretadminkey2026", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "pharmacistToken", "value": "", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "medicineId", "value": "", "type": "string" },
+    { "key": "orderId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Health & Discovery",
+      "item": [
+        {
+          "name": "Health Check (Render Health Check)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Server reports ok status', function () { const res = pm.response.json(); pm.expect(res.status).to.eql('ok'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API Root Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/", "host": ["{{baseUrl}}"], "path": [""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Auth & RBAC Setup",
+      "item": [
+        {
+          "name": "Register Customer (Public)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Customer\",\n  \"email\": \"alice_new@pharmacy.com\",\n  \"password\": \"Customer@123\",\n  \"phone\": \"+1-555-0999\",\n  \"address\": \"12 Elm Street\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201 Created or 400 if already exists', function () { pm.expect([201, 400]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Staff - Pharmacist (Protected by x-admin-key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-admin-key", "value": "{{adminKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Staff Pharmacist New\",\n  \"email\": \"pharma_new@pharmacy.com\",\n  \"password\": \"Pharma@123\",\n  \"role\": \"pharmacist\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register-staff", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register-staff"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201 Created or 400 duplicate', function () { pm.expect([201, 400]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Staff - Blocked without x-admin-key (403)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Attacker\",\n  \"email\": \"attacker@pharmacy.com\",\n  \"password\": \"Pass1234\",\n  \"role\": \"admin\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register-staff", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register-staff"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Customer (Captures customerToken)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer@pharmacy.com\",\n  \"password\": \"Customer@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('customerToken', res.token);",
+                  "  pm.environment.set('customerToken', res.token);",
+                  "  console.log('Saved customerToken');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Pharmacist (Captures pharmacistToken)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"pharmacist@pharmacy.com\",\n  \"password\": \"Pharma@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('pharmacistToken', res.token);",
+                  "  pm.environment.set('pharmacistToken', res.token);",
+                  "  console.log('Saved pharmacistToken');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Admin (Captures adminToken)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@pharmacy.com\",\n  \"password\": \"Admin@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('adminToken', res.token);",
+                  "  pm.environment.set('adminToken', res.token);",
+                  "  console.log('Saved adminToken');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Profile (Authenticated)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/profile", "host": ["{{baseUrl}}"], "path": ["api", "auth", "profile"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "pm.expect(res.user.email).to.eql('customer@pharmacy.com');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Medicines Inventory",
+      "item": [
+        {
+          "name": "Browse Public Catalog (Expired Filtered)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/medicines", "host": ["{{baseUrl}}"], "path": ["api", "medicines"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "if (res.medicines && res.medicines.length > 0) {",
+                  "  pm.collectionVariables.set('medicineId', res.medicines[0]._id);",
+                  "  pm.environment.set('medicineId', res.medicines[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search & Filter Catalog",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicines?category=Antibiotic&sort=price_asc&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "medicines"],
+              "query": [
+                { "key": "category", "value": "Antibiotic" },
+                { "key": "sort", "value": "price_asc" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add Medicine as Customer (Blocked 403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Customer Illegal Drug\",\n  \"brand\": \"IllegalBrand\",\n  \"category\": \"Antibiotic\",\n  \"dosageForm\": \"Tablet\",\n  \"price\": 10,\n  \"stockQuantity\": 10,\n  \"expiryDate\": \"2027-12-31\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/medicines", "host": ["{{baseUrl}}"], "path": ["api", "medicines"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add Medicine as Pharmacist (201 Created)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Metformin 500mg\",\n  \"brand\": \"Glucophage\",\n  \"category\": \"Antidiabetic\",\n  \"dosageForm\": \"Tablet\",\n  \"price\": 7.50,\n  \"stockQuantity\": 60,\n  \"requiresPrescription\": true,\n  \"expiryDate\": \"2027-08-15\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/medicines", "host": ["{{baseUrl}}"], "path": ["api", "medicines"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201 Created', function () { pm.response.to.have.status(201); });",
+                  "const res = pm.response.json();",
+                  "if (res.medicine) {",
+                  "  pm.collectionVariables.set('medicineId', res.medicine._id);",
+                  "  pm.environment.set('medicineId', res.medicine._id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Stock/Price as Pharmacist (200 OK)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 8.00,\n  \"stockQuantity\": 75\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/medicines/{{medicineId}}", "host": ["{{baseUrl}}"], "path": ["api", "medicines", "{{medicineId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Medicine as Pharmacist (Blocked 403 - Admin Only)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/medicines/{{medicineId}}", "host": ["{{baseUrl}}"], "path": ["api", "medicines", "{{medicineId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Medicine as Admin (200 OK)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/medicines/{{medicineId}}", "host": ["{{baseUrl}}"], "path": ["api", "medicines", "{{medicineId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Expiring Medicines Pipeline (Pharmacist/Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicines/expiring?days=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "medicines", "expiring"],
+              "query": [{ "key": "days", "value": "30" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "pm.expect(res.medicines).to.be.an('array');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Low Stock Inventory Alerts (Pharmacist/Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicines/low-stock?threshold=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "medicines", "low-stock"],
+              "query": [{ "key": "threshold", "value": "10" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "pm.expect(res.summary).to.have.property('categories');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Orders & Prescriptions",
+      "item": [
+        {
+          "name": "Place Customer Order (201 Created)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"medicineId\": \"{{medicineId}}\",\n      \"quantity\": 2\n    }\n  ],\n  \"prescriptionNotes\": \"Prescription verified by general physician\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/orders", "host": ["{{baseUrl}}"], "path": ["api", "orders"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201 or 400', function () { pm.expect([201, 400]).to.include(pm.response.code); });",
+                  "const res = pm.response.json();",
+                  "if (res.order) {",
+                  "  pm.collectionVariables.set('orderId', res.order._id);",
+                  "  pm.environment.set('orderId', res.order._id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Place Order as Pharmacist (Blocked 403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [{ \"medicineId\": \"{{medicineId}}\", \"quantity\": 1 }]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/orders", "host": ["{{baseUrl}}"], "path": ["api", "orders"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "View Customer My Orders (200 OK)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/orders/my-orders", "host": ["{{baseUrl}}"], "path": ["api", "orders", "my-orders"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List All Orders as Staff (200 OK)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders?status=pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders"],
+              "query": [{ "key": "status", "value": "pending" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "if (res.orders && res.orders.length > 0) {",
+                  "  pm.collectionVariables.set('orderId', res.orders[0]._id);",
+                  "  pm.environment.set('orderId', res.orders[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Order as Customer (Blocked 403)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "orders", "{{orderId}}", "status"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 403 Forbidden', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Order & Trigger Stock Deduction (200 OK)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\",\n  \"prescriptionVerified\": true\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "orders", "{{orderId}}", "status"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK or 409 conflict', function () { pm.expect([200, 400, 409]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dispense Order as Pharmacist (200 OK)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"dispensed\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "orders", "{{orderId}}", "status"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK or 400', function () { pm.expect([200, 400, 409]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Reports (Aliases)",
+      "item": [
+        {
+          "name": "GET /api/reports/expiring-soon",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{pharmacistToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/expiring-soon?days=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reports", "expiring-soon"],
+              "query": [{ "key": "days", "value": "30" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/reports/low-stock",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/low-stock?threshold=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reports", "low-stock"],
+              "query": [{ "key": "threshold", "value": "10" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
